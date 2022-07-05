@@ -1,12 +1,14 @@
 import os
-from this import d
+
 import pefile
 import hashlib
 import array
 import math
 
 
-import sys
+import yara
+import string
+
 import peutils
 
 
@@ -56,6 +58,7 @@ def get_resources(pe):
             return resources
     return resources
 
+# Find packer with signature
 def get_packer(pe):
     packer_signatures = peutils.SignatureDatabase(os.path.join("packers.txt"))
     matches = packer_signatures.match_all(pe, ep_only=True)
@@ -65,10 +68,62 @@ def get_packer(pe):
             if item[0] not in array:
                 array.append(item[0])
         print(array)
-        return 1
+        return 1, array[0]
     else:
         print("Not packed")
-        return 0
+        return 0, "Not packed"
+
+# YARA
+def get_yara(pe):
+    # rules = yara.compile(filepaths={
+    #     'AntiVM/DB': os.path.join("yara", "antidebug_antivm_index.yar"),
+    #     'Crypto': os.path.join("yara", "crypto_index.yar"),
+    #     'CVE':os.path.join("yara", "cve_rules_index.yar"),
+    #     'Exploit': os.path.join("yara", "exploit_kits_index.yar"),
+    #     'Malware': os.path.join("yara", "malware_index.yar"),
+    #     'Packers': os.path.join("yara", "packers_index.yar"),
+    #     'Webshell': os.path.join("yara", "webshells_index.yar")
+    #     })
+    rules = yara.compile(filepaths={
+        'Malware': os.path.join("yara", "malware_index.yar"),
+        'Packers': os.path.join("yara", "packers_index.yar")
+        })
+    strings_list = []
+    format_str = "{:<35} {:<1} {:<1}"
+    with open(pe, 'rb') as f:
+        matches = rules.match(data=f.read())
+    if matches:
+        # for x in matches:
+        #     print(str(x.rule))
+        #     print("\tType: " + str(x.namespace))
+        #     print("\tTags: ".join(x.tags)
+        #            if x.tags else "\tTags: None")
+        #     print("\tMeta:")
+        #     print("\t\tDate: " + str(x.meta.get('date')))
+        #     print("\t\tVersion: " + str(x.meta.get('version')))
+        #     print("\t\tDescription: " + str(x.meta.get('description')))
+        #     print("\t\tAuthor: " + str(x.meta.get('author')))
+        #     if not x.strings:
+        #         print("\tStrings: None")
+        #     else:
+        #         for i in x.strings:
+        #             strings_list.append(i[2])
+        #         print("\tStrings: ")
+        #         non_printable_count = 0
+        #         for i in list(set(strings_list)):
+        #             if all(str(c) in string.printable for c in i):
+        #                 print(("\t\t" + format_str.format(str(i), "| Occurrences:", str(strings_list.count(i)))))
+        #             else:
+        #                 non_printable_count += 1
+        #         if non_printable_count > 0:
+        #             print("\t\t[X] " + str(non_printable_count) + " string(s) not printable")
+        #         del(strings_list[:])
+        #     print("\n")
+        print("\n\n\n\n", matches)
+        return str(len(matches))
+    else:
+        print("[X] No")
+        return str(len(matches))
 
 # Return version infos
 def get_version_info(pe):
@@ -137,7 +192,7 @@ def extract_info(filepath):
     res.append(len(pe.sections))
 
     entropy = list(map(lambda x: x.get_entropy(), pe.sections))
-    print(entropy)
+
     res.append(sum(entropy) / float(len(entropy)))
     res.append(min(entropy))
     res.append(max(entropy))
@@ -204,10 +259,14 @@ def extract_info(filepath):
         res.append(0)
 
     # Get packer
-
-    packer = get_packer(pe)
+    packed, packer = get_packer(pe)
+    res.append(packed)
     res.append(packer)
 
+    # YARA
+
+    yara = get_yara(filepath)
+    res.append(yara)
 
     return res
 
@@ -278,6 +337,8 @@ if __name__ == "__main__":
         "LoadConfigurationSize",
         "VersionInformationSize",
         "packed",
+        "packer",
+        "yara",
         "legitimate",
     ]
     # Opens a file for appending, creates the file if it does not exist
